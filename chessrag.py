@@ -128,36 +128,38 @@ def extract_pawns_from_fen(fen):
         if file > 8:
             file = 1
             rank -= 1
-    return pawn_positions
+    return tuple(pawn_positions)
 
 
 def extract_pawn_structure(game):
     pawn_structures = []
     board = chess.Board()
 
-    for move in game.mainline_moves():
+    for i, move in enumerate(game.mainline_moves()):
         board.push(move)
-        fen = board.board_fen()
-        pawns = extract_pawns_from_fen(fen)
-        pawn_structures.append(pawns)
+        if i > 5: # if we start too early, we see no opening variety
+            fen = board.board_fen()
+            pawns = extract_pawns_from_fen(fen)
+            pawn_structures.append(pawns)
 
     return pawn_structures
 
 
-# calculates jaccard similarity for all pawn structures
 def pawn_structure_similarity(game1, game2):
-    pawn_structures1 = extract_pawn_structure(game1)
-    pawn_structures2 = extract_pawn_structure(game2)
-
-    all_similarities = []
-    for pawn1 in pawn_structures1:
-        for pawn2 in pawn_structures2:
-            intersection = len(set(pawn1).intersection(set(pawn2)))
-            union = len(set(pawn1).union(set(pawn2)))
-            similarity = intersection / union if union > 0 else 0.0
-            all_similarities.append(similarity)
-
-    return sum(all_similarities) / len(all_similarities)
+    pawn_structures1 = set(extract_pawn_structure(game1))
+    pawn_structures2 = set(extract_pawn_structure(game2))
+    # all_similarities = []
+    # for pawn1 in set(pawn_structures1):
+    #     for pawn2 in set(pawn_structures2):
+    #         intersection = len(set(pawn1).intersection(set(pawn2)))
+    #         union = len(set(pawn1).union(set(pawn2)))
+    #         similarity = intersection / union if union > 0 else 0.0
+    #         all_similarities.append(similarity)
+    #
+    # return sum(all_similarities) / len(all_similarities)
+    intersection = len(set(pawn_structures1).intersection(set(pawn_structures2)))
+    union = len(set(pawn_structures1).union(set(pawn_structures2)))
+    return intersection / union if union > 0 else 0.0
 
 #
 # Prompting, and doing the actual LLM bit (see joaquin example more)
