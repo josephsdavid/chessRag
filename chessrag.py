@@ -1,11 +1,24 @@
 import llama_index
+from llama_index.llms.huggingface import HuggingFaceLLM
+import numpy as np
 import chess
+from io import StringIO
 from chess import pgn
 import chromadb
 import uuid
 from uuid import UUID, uuid5
 import tqdm
 import re
+from datetime import datetime, timedelta
+
+def generate_dates(start_date_str):
+    # Convert the input start date string to a datetime object
+    start_date = datetime.strptime(start_date_str, '%Y.%m.%d')
+    # Get today's date
+    end_date = datetime.now()
+    # Generate a list of dates from start_date to end_date
+    date_list = [(start_date + timedelta(days=x)).strftime('%Y.%m.%d') for x in range((end_date - start_date).days + 1)]
+    return date_list
 
 #
 # Useful consts
@@ -43,6 +56,12 @@ class PgnLoader:
 
     def __len__(self):
         return len(self.offsets)
+
+
+def read_pgn_from_string(pgn_string):
+    pgn_io = StringIO(pgn_string)
+    game = chess.pgn.read_game(pgn_io)
+    return game
 
 
 #
@@ -108,24 +127,29 @@ def extract_pawn_structure(game):
     return pawn_structures
 
 
-# TODO: This is a little naive and looks for just exact matches, which is fine
-# However I think it would be more interesting to do a pairwise distance between all pawn structures
-# expensive though
+# calculates jaccard similarity for all pawn structures
 def pawn_structure_similarity(game1, game2):
     pawn_structures1 = extract_pawn_structure(game1)
     pawn_structures2 = extract_pawn_structure(game2)
 
-    # Calculate the Jaccard similarity between sets of pawn structures
-    intersection = len(set(pawn_structures1).intersection(set(pawn_structures2)))
-    union = len(set(pawn_structures1).union(set(pawn_structures2)))
+    all_similarities = []
+    for pawn1 in set(pawn_structures1):
+        for pawn2 in set(pawn_structures2):
+            __import__('pdb').set_trace()
+            intersection = len(set(pawn1).intersection(set(pawn2)))
+            union = len(set(pawn1).union(set(pawn2)))
+            similarity = intersection / union if union > 0 else 0.0
+            all_similarities.append(similarity)
 
-    similarity = intersection / union if union > 0 else 0.0
-    return similarity
+    return sum(all_similarities) / len(all_similarities)
 
+#
+# Prompting, and doing the actual LLM bit (see joaquin example more)
+#
 def generate_prompt(prompt_documents, game_string):
 
     prompt_documents = " __NEW_GAME__ ".join(prompt_documents)
-    prompt = f"""
+    return f"""
     You are an automated chess coach. Your job is to annotate a chess game for your student,
     providing:
     helpful comments in {{}} squiggly brackets,
@@ -158,12 +182,7 @@ def generate_prompt(prompt_documents, game_string):
     {game_string}
     """
 
-
-
-
-
 # collection.get(document_id) to query by id
-
 if __name__ == "__main__":
     loader = PgnLoader(PGN_STORE)
     client = chromadb.PersistentClient(path="vectors/chess")
@@ -191,9 +210,25 @@ if __name__ == "__main__":
         process_chessgame(game.mainline_moves()),
         n_results=100
     )
-    ids = closest_matches["ids"][0]
-    # TODO: Make reranker
-    # TODO: Pass prompt to LLM
-    # TODO: Integrate a stockfish analysis on both the game and the
-    # TODO: Output
+
+    assert len(closest_matches["documents"]) == 1 == len(closest_matches["ids"])
+    assert len(closest_matches["documents"][0]) == 100 == len(closest_matches["ids"][0])
+    similarities = [pawn_structure_similarity(game, read_pgn_from_string(match_game)) for match_game in tqdm.tqdm(closest_matches["documents"][0])]
+    indices = np.array(sorted(range(len(similarities)), key=lambda idx: similarities[idx], reverse=True))
+    ids = np.array(closest_matches["ids"][0])
+    ranked_ids = ids[indices][:5].tolist()
+    best_games = annotated.get(ranked_ids)["documents"]
+    prompt = generate_prompt(best_games, str(game))
+
+    # XXX: Almost done, However my prompt is extremely long! How do i deal with this? How does chunking work?
+    llm = HuggingFaceLLM(
+        model_name="HuggingFaceH4/zephyr-7b-beta",
+        tokenizer_name="HuggingFaceH4/zephyr-7b-beta",
+        context_window=3900,
+        max_new_tokens=256,
+        # model_kwargs={"quantization_config": quantization_config},
+        # tokenizer_kwargs={},
+        generate_kwargs={"temperature": 0.7, "top_k": 50, "top_p": 0.95},
+        device_map="auto",
+    )
     __import__('pdb').set_trace()
