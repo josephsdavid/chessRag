@@ -7,7 +7,9 @@ from uuid import UUID, uuid5
 import tqdm
 import re
 
-# setup Chroma in-memory, for easy prototyping. Can add persistence easily!
+#
+# Useful consts
+#
 
 FORCE = False
 NAMESPACE = UUID('6ef7b608-8ef8-4c30-95a4-2967f4ce0976')
@@ -16,8 +18,10 @@ HEADER_KEYS = [
     "Date", "Site", "White", "Black", "Result", "Round", "ECO", "Annotator"
 ]
 
+#
+# Chess utilities
+#
 
-# python chess library is annoying, add a convenience wrapper
 class PgnLoader:
 
     def __init__(self, store):
@@ -41,6 +45,10 @@ class PgnLoader:
         return len(self.offsets)
 
 
+#
+# Tools for creating vector dbs
+#
+
 def id_from_headers(headers):
     return str(uuid5(NAMESPACE, str(dict(headers))))
 
@@ -56,6 +64,9 @@ def add_game_to_collection(collection, game):
     add_game_and_headers_to_collection(collection, game, headers)
 
 
+#
+# Stripping variations, comments, notes, evaluations, etc.
+#
 def process_pgn(input_string):
     # Remove characters after dollar signs and up to the next space
     dollar_removed = re.sub(r'\$[^\s]*', '', input_string)
@@ -73,10 +84,18 @@ def process_chessgame(game):
     return process_pgn(str(game))
 
 
+# a helper for querying collections because im lazy
 def query_collection_with_game(collection, game, n_results, **kwargs):
     return collection.query(query_texts=[game], n_results=n_results, **kwargs)
 
 
+#
+# Similarity between games!
+#
+
+# for now, this is based entirely off of pawn structure,
+# if the same (non initial) pawn structure occurs in a game,
+# odds are at some point something similar happened in both games
 def extract_pawn_structure(game):
     pawn_structures = []
     board = chess.Board()
@@ -88,6 +107,10 @@ def extract_pawn_structure(game):
 
     return pawn_structures
 
+
+# TODO: This is a little naive and looks for just exact matches, which is fine
+# However I think it would be more interesting to do a pairwise distance between all pawn structures
+# expensive though
 def pawn_structure_similarity(game1, game2):
     pawn_structures1 = extract_pawn_structure(game1)
     pawn_structures2 = extract_pawn_structure(game2)
@@ -171,5 +194,6 @@ if __name__ == "__main__":
     ids = closest_matches["ids"][0]
     # TODO: Make reranker
     # TODO: Pass prompt to LLM
+    # TODO: Integrate a stockfish analysis on both the game and the
     # TODO: Output
     __import__('pdb').set_trace()
