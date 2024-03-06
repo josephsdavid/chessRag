@@ -1,4 +1,5 @@
 import llama_index
+import chess
 from chess import pgn
 import chromadb
 import uuid
@@ -75,6 +76,28 @@ def process_chessgame(game):
 def query_collection_with_game(collection, game, n_results, **kwargs):
     return collection.query(query_texts=[game], n_results=n_results, **kwargs)
 
+
+def extract_pawn_structure(game):
+    pawn_structures = []
+    board = chess.Board()
+
+    for move in game.mainline_moves():
+        board.push(move)
+        pawn_structure = board.board_fen().split(' ')[0]
+        pawn_structures.append(pawn_structure)
+
+    return pawn_structures
+
+def pawn_structure_similarity(game1, game2):
+    pawn_structures1 = extract_pawn_structure(game1)
+    pawn_structures2 = extract_pawn_structure(game2)
+
+    # Calculate the Jaccard similarity between sets of pawn structures
+    intersection = len(set(pawn_structures1).intersection(set(pawn_structures2)))
+    union = len(set(pawn_structures1).union(set(pawn_structures2)))
+
+    similarity = intersection / union if union > 0 else 0.0
+    return similarity
 
 def generate_prompt(prompt_documents, game_string):
 
