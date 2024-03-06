@@ -1,5 +1,4 @@
 import llama_index
-from llama_index.llms.huggingface import HuggingFaceLLM
 import numpy as np
 import chess
 from io import StringIO
@@ -115,14 +114,32 @@ def query_collection_with_game(collection, game, n_results, **kwargs):
 # for now, this is based entirely off of pawn structure,
 # if the same (non initial) pawn structure occurs in a game,
 # odds are at some point something similar happened in both games
+def extract_pawns_from_fen(fen):
+    board_position = fen.split()[0]  # Extract only the board position part of the FEN
+    pawn_positions = []
+    rank = 8  # Start from the 8th rank (top row in the board)
+    file = 1  # Start from the a-file (leftmost column in the board)
+    for char in board_position:
+        if char == 'P':
+            pawn_positions.append((file, rank, "w"))
+        elif char == 'p':
+            pawn_positions.append((file, rank, "b"))
+        file += 1
+        if file > 8:
+            file = 1
+            rank -= 1
+    return pawn_positions
+
+
 def extract_pawn_structure(game):
     pawn_structures = []
     board = chess.Board()
 
     for move in game.mainline_moves():
         board.push(move)
-        pawn_structure = board.board_fen().split(' ')[0]
-        pawn_structures.append(pawn_structure)
+        fen = board.board_fen()
+        pawns = extract_pawns_from_fen(fen)
+        pawn_structures.append(pawns)
 
     return pawn_structures
 
@@ -133,9 +150,8 @@ def pawn_structure_similarity(game1, game2):
     pawn_structures2 = extract_pawn_structure(game2)
 
     all_similarities = []
-    for pawn1 in set(pawn_structures1):
-        for pawn2 in set(pawn_structures2):
-            __import__('pdb').set_trace()
+    for pawn1 in pawn_structures1:
+        for pawn2 in pawn_structures2:
             intersection = len(set(pawn1).intersection(set(pawn2)))
             union = len(set(pawn1).union(set(pawn2)))
             similarity = intersection / union if union > 0 else 0.0
@@ -221,14 +237,4 @@ if __name__ == "__main__":
     prompt = generate_prompt(best_games, str(game))
 
     # XXX: Almost done, However my prompt is extremely long! How do i deal with this? How does chunking work?
-    llm = HuggingFaceLLM(
-        model_name="HuggingFaceH4/zephyr-7b-beta",
-        tokenizer_name="HuggingFaceH4/zephyr-7b-beta",
-        context_window=3900,
-        max_new_tokens=256,
-        # model_kwargs={"quantization_config": quantization_config},
-        # tokenizer_kwargs={},
-        generate_kwargs={"temperature": 0.7, "top_k": 50, "top_p": 0.95},
-        device_map="auto",
-    )
     __import__('pdb').set_trace()
